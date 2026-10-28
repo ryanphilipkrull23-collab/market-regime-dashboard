@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Market regime</title>
+<style>
+:root{--bg:#eef1f4;--ink:#14202b;--mute:#5d6b78;--line:#cdd5dc;--ratio:#1f6f8b;--bull:#1c7c54;--neu:#9a6b00;--off:#b3372e}
+@media (prefers-color-scheme:dark){:root{--bg:#0f1720;--ink:#e6ecf1;--mute:#93a1ad;--line:#2a3743;--ratio:#5bb8d6;--bull:#4cc38a;--neu:#e0a630;--off:#f0786d}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif}
+main{max-width:860px;margin:0 auto;padding:40px 20px 56px}
+.regime{border-left:6px solid var(--mute);padding-left:20px;margin-bottom:36px}
+.regime.bull{border-color:var(--bull)}.regime.neu{border-color:var(--neu)}.regime.off{border-color:var(--off)}
+.regime h1{font:700 clamp(34px,7vw,56px)/1.05 Georgia,"Times New Roman",serif;margin:0 0 10px}
+.regime.bull h1{color:var(--bull)}.regime.neu h1{color:var(--neu)}.regime.off h1{color:var(--off)}
+.regime p{margin:0;max-width:60ch;color:var(--mute)}
+dl{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:20px 24px;margin:0 0 32px}
+dt{font-size:13px;color:var(--mute)}dd{margin:2px 0 0;font:600 22px/1.2 system-ui;font-variant-numeric:tabular-nums}
+h2{font:600 17px/1.3 system-ui;margin:0 0 4px}
+.sub{color:var(--mute);font-size:14px;margin:0 0 12px}
+svg{width:100%;height:auto;display:block;overflow:visible}
+.ax{fill:var(--mute);font-size:11px}.grid{stroke:var(--line)}
+.l-ratio{fill:none;stroke:var(--ratio);stroke-width:2}.l-20{fill:none;stroke:var(--mute);stroke-width:1.2}.l-50{fill:none;stroke:var(--mute);stroke-width:1.2;stroke-dasharray:4 3}
+.key{display:flex;gap:18px;font-size:13px;color:var(--mute);margin-top:8px}
+.foot{margin-top:28px;font-size:13px;color:var(--mute)}
+#err{display:none;border:1px solid var(--off);padding:14px 16px;color:var(--off)}
+</style>
+</head>
+<body>
+<main>
+  <div id="err"></div>
+  <section class="regime" id="regime" hidden>
+    <h1 id="word"></h1>
+    <p id="why"></p>
+  </section>
+  <dl id="stats" hidden></dl>
+  <section id="chartwrap" hidden>
+    <h2>QQQ / SPY ratio</h2>
+    <p class="sub">Rising: Mag 7 and large-cap tech lead. Falling: the rest of the market leads. Last 130 trading days.</p>
+    <svg id="chart" viewBox="0 0 760 270" role="img" aria-label="QQQ/SPY ratio with 20 and 50 day averages"></svg>
+    <div class="key"><span style="color:var(--ratio)">&#9644; Ratio</span><span>&#9644; 20-day average</span><span>&#9548; 50-day average</span></div>
+  </section>
+  <p class="foot" id="foot"></p>
+</main>
+<script>
+const avg=(a,n)=>a.length<n?null:a.slice(-n).reduce((x,y)=>x+y,0)/n;
+const avgSeries=(a,n)=>a.map((_,i)=>i<n-1?null:a.slice(i-n+1,i+1).reduce((x,y)=>x+y,0)/n);
+const pct=(a,b)=>(a/b-1)*100, fp=v=>(v>=0?"+":"")+v.toFixed(2)+"%";
+
+function classify(m){
+  let leader = m.ratio>m.r20 && m.r20>m.r50 ? "mag7" : m.ratio<m.r20 && m.r20<m.r50 ? "broad" : "none";
+  const spyUp = m.spy>m.s50;
+  let regime = "neu";
+  if(leader==="mag7" && spyUp) regime="bull";
+  else if(leader!=="mag7" && !spyUp) regime="off";
+  return {leader,regime,spyUp};
+}
+
+function render(d){
+  const q=d.QQQ,s=d.SPY,r=q.map((v,i)=>v/s[i]);
+  const m={ratio:r.at(-1),r20:avg(r,20),r50:avg(r,50),spy:s.at(-1),s50:avg(s,50),s200:avg(s,200)};
+  const c=classify(m);
+  const word={bull:"Bullish",neu:"Neutral",off:"Risk off"}[c.regime];
+  const lead={mag7:"Mag 7 and large-cap tech are leading",broad:"the rest of the market is leading",none:"neither side is clearly leading"}[c.leader];
+  const sp=c.spyUp?"SPY is above its 50-day average":"SPY is below its 50-day average";
+  const reg=document.getElementById("regime");
+  reg.className="regime "+c.regime;reg.hidden=false;
+  document.getElementById("word").textContent=word;
+  document.getElementById("why").textContent=`QQQ/SPY says ${lead}, and ${sp}. Provisional reading from the ratio alone; more indicators will refine it.`;
+  const st=[["QQQ/SPY",m.ratio.toFixed(4)],["Ratio vs 20-day",fp(pct(m.ratio,m.r20))],["Ratio vs 50-day",fp(pct(m.ratio,m.r50))],["Ratio, 20 days",fp(pct(m.ratio,r.at(-21)))],["SPY vs 50-day",fp(pct(m.spy,m.s50))],["SPY vs 200-day",fp(pct(m.spy,m.s200))]];
+  const dl=document.getElementById("stats");
+  dl.innerHTML=st.map(([k,v])=>`<div><dt>${k}</dt><dd>${v}</dd></div>`).join("");dl.hidden=false;
+  chart(d.dates,r);
+  document.getElementById("foot").textContent=`Last close ${d.dates.at(-1)}. Data refreshed ${d.updated.slice(0,16).replace("T"," ")} UTC.`;
+}
+function chart(dates,r){
+  const N=130,W=760,H=270,L=8,R=8,T=10,B=26;
+  const a=r.slice(-N),a20=avgSeries(r,20).slice(-N),a50=avgSeries(r,50).slice(-N),dt=dates.slice(-N);
+  const all=[...a,...a20,...a50].filter(v=>v!=null),lo=Math.min(...all),hi=Math.max(...all),pad=(hi-lo)*.08;
+  const x=i=>L+i/(a.length-1)*(W-L-R),y=v=>T+(1-(v-(lo-pad))/(hi-lo+2*pad))*(H-T-B);
+  const path=arr=>{let p="",on=false;arr.forEach((v,i)=>{if(v==null)return;p+=(on?"L":"M")+x(i).toFixed(1)+" "+y(v).toFixed(1);on=true});return p};
+  let g="";
+  for(let k=0;k<=3;k++){const v=lo-pad+(hi-lo+2*pad)*k/3,yy=y(v);g+=`<line class="grid" x1="${L}" x2="${W-R}" y1="${yy}" y2="${yy}"/><text class="ax" x="${W-R}" y="${yy-4}" text-anchor="end">${v.toFixed(3)}</text>`}
+  g+=`<text class="ax" x="${L}" y="${H-6}">${dt[0]}</text><text class="ax" x="${W-R}" y="${H-6}" text-anchor="end">${dt.at(-1)}</text>`;
+  g+=`<path class="l-50" d="${path(a50)}"/><path class="l-20" d="${path(a20)}"/><path class="l-ratio" d="${path(a)}"/>`;
+  document.getElementById("chart").innerHTML=g;document.getElementById("chartwrap").hidden=false;
+}
+fetch("data.json?"+Date.now()).then(r=>{if(!r.ok)throw 0;return r.json()}).then(render).catch(()=>{
+  const e=document.getElementById("err");e.style.display="block";
+  e.textContent="No data yet. Run the “Update market data” workflow once in GitHub Actions. If you opened this file directly from your computer, serve it instead with: python -m http.server";
+});
+</script>
+</body>
+</html>
